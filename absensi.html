@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WatchSMP — Monitoring & Registrasi</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ─── MODERN CSS RESET & VARIABLES ─── */
+:root {
+  --bg: #090a0f;
+  --surface: #11131a;
+  --surface-2: #1a1d26;
+  --primary: #6366f1;
+  --primary-glow: rgba(99, 102, 241, 0.3);
+  --danger: #f43f5e;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: #262b3b;
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --font: 'Plus Jakarta Sans', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+}
+
+/* ─── SIDEBAR ─── */
+aside {
+  width: 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 30px 20px;
+  height: 100vh;
+  position: fixed;
+}
+
+.brand {
+  display: flex;
+  align-items: center; gap: 12px;
+  margin-bottom: 40px; padding: 0 10px;
+}
+.brand-icon {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--primary), #a855f7);
+  border-radius: 12px;
+  display: grid; place-items: center; font-size: 20px;
+}
+.brand-name { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+
+nav { display: flex; flex-direction: column; gap: 8px; }
+.nav-link {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius-md);
+  color: var(--text-muted); text-decoration: none;
+  font-weight: 500; transition: all 0.3s;
+  cursor: pointer; border: none; background: none; text-align: left;
+}
+.nav-link:hover { background: var(--surface-2); color: var(--text-main); }
+.nav-link.active { background: var(--primary); color: #fff; box-shadow: 0 4px 15px var(--primary-glow); }
+
+/* ─── MAIN CONTENT ─── */
+main {
+  margin-left: 260px;
+  flex: 1;
+  padding: 40px;
+}
+
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+.header h1 { font-size: 28px; font-weight: 700; }
+.header p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+
+/* ─── CARDS ─── */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+/* ─── TABLES ─── */
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+th { text-align: left; padding: 15px; color: var(--text-muted); font-size: 13px; font-weight: 600; border-bottom: 2px solid var(--border); }
+td { padding: 15px; border-bottom: 1px solid var(--border); font-size: 14px; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+
+.badge {
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+}
+.badge-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+.badge-danger { background: rgba(244, 63, 94, 0.1); color: var(--danger); }
+.badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+
+/* ─── BUTTONS ─── */
+.btn {
+  padding: 10px 20px; border-radius: var(--radius-md); font-weight: 600; cursor: pointer;
+  border: none; transition: 0.3s; display: inline-flex; align-items: center; gap: 8px; font-size: 13px;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px var(--primary-glow); }
+.btn-sm { padding: 6px 12px; font-size: 11px; }
+
+/* ─── FORMS ─── */
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; margin-bottom: 8px; font-size: 13px; color: var(--text-muted); }
+.form-control {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  padding: 12px 16px; border-radius: var(--radius-md); color: #fff; outline: none; transition: 0.3s;
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+/* ─── SCANNER UI ─── */
+.scanner-status-box {
+  text-align: center; padding: 30px; background: var(--surface-2); border-radius: var(--radius-lg); border: 2px dashed var(--border);
+}
+.pulse { animation: pulse-animation 2s infinite; }
+@keyframes pulse-animation {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ─── MODAL ─── */
+.modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px);
+  display: none; place-items: center; z-index: 1000;
+}
+.modal.open { display: grid; }
+.modal-content {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 30px; border-radius: var(--radius-lg); width: 90%; max-width: 450px;
+}
+
+/* ─── UNKNOWN ROW ─── */
+.unknown-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 15px; background: var(--surface-2); border-radius: var(--radius-md); margin-bottom: 12px;
+  border-left: 4px solid var(--warning);
+  transition: transform 0.2s;
+}
+.unknown-row:hover { transform: translateX(5px); }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand">
+    <div class="brand-icon">🛡️</div>
+    <div class="brand-name">WatchSMP</div>
+  </div>
+  <nav>
+    <button class="nav-link active" onclick="showPage('dashboard')">📊 Dashboard</button>
+    <button class="nav-link" onclick="showPage('discovery')" id="nav-discovery">✨ Sidik Jari Baru <span id="discovery-count" style="background:var(--danger); color:white; font-size:10px; padding:2px 6px; border-radius:10px; margin-left:5px; display:none;">0</span></button>
+    <button class="nav-link" onclick="showPage('siswa')">👥 Data Siswa</button>
+    <button class="nav-link" onclick="showPage('log')">📋 Log Kehadiran</button>
+  </nav>
+</aside>
+
+<main>
+  <!-- DASHBOARD -->
+  <section id="page-dashboard" class="page active">
+    <div class="header">
+      <div>
+        <h1>Dashboard Monitoring</h1>
+        <p>Status kehadiran siswa terpantau secara real-time</p>
+      </div>
+      <button class="btn btn-primary" onclick="startEnroll()">➕ Rekam Jari Baru di Sensor</button>
+    </div>
+
+    <div class="card" id="scanner-status-card">
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px; font-size: 10px;">
+        <span id="conn-esp" style="color: var(--danger);">● ESP32: Disconnected</span>
+        <span id="conn-api" style="color: var(--danger);">● API: Disconnected</span>
+      </div>
+      <div class="scanner-status-box">
+        <div style="font-size: 50px; margin-bottom: 10px;" id="status-icon">☝️</div>
+        <h2 id="status-text">Menunggu Scan...</h2>
+        <p id="status-subtext" style="color: var(--text-muted); margin-top: 5px;"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Statistik Hari Ini</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+        <div style="padding: 20px; background: var(--surface-2); border-radius: 12px; text-align: center;">
+          <div style="color: var(--text-muted); font-size: 12px;">TOTAL SISWA</div>
+          <div style="font-size: 24px; font-weight: 700;" id="stat-total">0</div>
+        </div>
+        <div style="padding: 20px; background: var(--surface-2); border-radius: 12px; text-align: center;">
+          <div style="color: var(--text-muted); font-size: 12px;">HADIR HARI INI</div>
+          <div style="font-size: 24px; font-weight: 700; color: var(--success);" id="stat-hadir">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Tools & Maintenance</h3>
+      <div style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 15px;">
+        <button class="btn btn-sm" style="background:var(--surface-2); border:1px solid var(--danger); color:var(--danger);" onclick="openDeleteModal()">🗑️ Hapus ID Tertentu dari Sensor</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- DISCOVERY PAGE (Unknown Fingerprints) -->
+  <section id="page-discovery" class="page">
+    <div class="header">
+      <div>
+        <h1>Sidik Jari Baru Terdeteksi</h1>
+        <p>Daftar sidik jari yang terbaca sensor tapi belum memiliki data nama</p>
+      </div>
+      <button class="btn btn-sm" style="background:var(--danger); color:white;" onclick="clearAllUnknown()">🗑️ Bersihkan Semua Antrian</button>
+    </div>
+    
+    <div class="card" id="unknown-container">
+      <div id="unknown-list-full">
+        <p style="text-align: center; color: var(--text-muted); padding: 40px;">Tidak ada sidik jari baru yang perlu didaftarkan.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DATA SISWA -->
+  <section id="page-siswa" class="page">
+    <div class="header">
+      <h1>Data Siswa Terdaftar</h1>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>NIS</th>
+            <th>Nama</th>
+            <th>Kelas</th>
+            <th>FP ID</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="table-siswa"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LOG KEHADIRAN -->
+  <section id="page-log" class="page">
+    <div class="header">
+      <h1>Log Kehadiran</h1>
+    </div>
+    
+    <div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Cari Nama/NIS</label>
+        <input type="text" id="filter-search" class="form-control" placeholder="Ketik nama..." style="width: 180px; padding: 8px;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Dari Tanggal & Jam</label>
+        <input type="datetime-local" id="filter-start" class="form-control" style="width: 200px; padding: 8px;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Sampai Tanggal & Jam</label>
+        <input type="datetime-local" id="filter-end" class="form-control" style="width: 200px; padding: 8px;">
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding-bottom: 8px;">
+        <input type="checkbox" id="filter-hide-dup" style="width: 18px; height: 18px; cursor: pointer;">
+        <label for="filter-hide-dup" style="font-size: 13px; cursor: pointer; color: var(--text-main);">Sembunyikan Duplikat</label>
+      </div>
+      <button class="btn btn-primary" onclick="loadLogs()">🔍 Filter</button>
+      <button class="btn" style="background:var(--success); color:white;" onclick="exportLogs()">📊 Export Excel</button>
+      <button class="btn" style="background:var(--surface-2);" onclick="resetLogFilter()">🔄 Reset</button>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Nama</th>
+            <th>NIS</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="table-log"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- MODAL REGISTRASI -->
+<div class="modal" id="modal-reg">
+  <div class="modal-content">
+    <h2 style="margin-bottom: 20px;">Daftarkan Data Siswa</h2>
+    <div class="form-group">
+      <label>Fingerprint ID</label>
+      <input type="text" id="reg-fpid" class="form-control" readonly style="color:var(--warning); font-weight:700;">
+    </div>
+    <div class="form-group">
+      <label>NIS</label>
+      <input type="text" id="reg-nis" class="form-control" placeholder="Nomor Induk Siswa">
+    </div>
+    <div class="form-group">
+      <label>Nama Lengkap</label>
+      <input type="text" id="reg-nama" class="form-control" placeholder="Nama Lengkap">
+    </div>
+    <div class="form-group">
+      <label>Kelas</label>
+      <input type="text" id="reg-kelas" class="form-control" placeholder="Contoh: 9B">
+    </div>
+    <div class="form-group">
+      <label>Alasan Pantauan</label>
+      <textarea id="reg-ket" class="form-control" rows="2"></textarea>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn" style="flex:1; background:var(--surface-2);" onclick="closeModal()">Batal</button>
+      <button class="btn btn-primary" style="flex:2;" onclick="submitReg()">Simpan Data</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================= CONFIG JARINGAN =================
+const ESP32_IP  = "http://192.168.6.8";    // IP Alat (Cek di Serial Monitor)
+const SERVER_URL = "http://localhost/fp";   // URL API (Tanpa tanda miring di akhir)
+// ===================================================
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  const btn = Array.from(document.querySelectorAll('.nav-link')).find(b => b.innerText.toLowerCase().includes(id.replace('discovery','sidik jari baru')));
+  if(btn) btn.classList.add('active');
+
+  if(id === 'discovery') loadUnknown();
+  if(id === 'siswa') loadSiswa();
+  if(id === 'log') loadLogs();
+}
+
+function openModal(id) {
+  editingId = null;
+  document.getElementById('modal-reg').classList.add('open');
+  document.querySelector('#modal-reg h2').innerText = "Daftarkan Data Siswa";
+  document.getElementById('reg-fpid').value = id;
+  // Reset fields
+  document.getElementById('reg-nis').value = "";
+  document.getElementById('reg-nama').value = "";
+  document.getElementById('reg-kelas').value = "";
+  document.getElementById('reg-ket').value = "";
+}
+
+let editingId = null;
+
+async function openEditModal(id) {
+  editingId = id;
+  const res = await fetch(`api.php?action=get_siswa_by_id&id=${id}`);
+  const s = await res.json();
+  
+  document.getElementById('modal-reg').classList.add('open');
+  document.querySelector('#modal-reg h2').innerText = "Edit Data Siswa";
+  document.getElementById('reg-fpid').value = s.fp_id;
+  document.getElementById('reg-nis').value = s.nis;
+  document.getElementById('reg-nama').value = s.nama;
+  document.getElementById('reg-kelas').value = s.kelas;
+  document.getElementById('reg-ket').value = s.keterangan_masalah || "";
+}
+
+function closeModal() { 
+  document.getElementById('modal-reg').classList.remove('open'); 
+  editingId = null;
+}
+
+// ─── API CALLS ───
+async function loadSiswa() {
+  const res = await fetch(`${SERVER_URL}/api.php?action=get_siswa`);
+  const data = await res.json();
+  document.getElementById('table-siswa').innerHTML = data.map(s => `
+    <tr>
+      <td>${s.nis}</td>
+      <td><b>${s.nama}</b></td>
+      <td>${s.kelas}</td>
+      <td><span class="badge" style="background:var(--surface-2); color:var(--warning)">ID-${s.fp_id}</span></td>
+      <td>
+        <div style="display:flex; gap:5px;">
+          <button class="btn btn-sm" onclick="openEditModal(${s.id})" style="background:var(--primary); color:white;">Edit</button>
+          <button class="btn btn-sm" onclick="deleteSiswa(${s.id}, ${s.fp_id})" style="background:var(--danger); color:white;">Hapus</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('stat-total').innerText = data.length;
+}
+
+async function loadUnknown() {
+  const res = await fetch('api.php?action=get_unknown_scans');
+  const data = await res.json();
+  const list = document.getElementById('unknown-list-full');
+  const badge = document.getElementById('discovery-count');
+
+  // Filter agar ID 0 (Unknown) tidak muncul di daftar registrasi
+  const filteredData = data.filter(u => u.fp_id > 0);
+
+  if(filteredData.length > 0) {
+    badge.innerText = filteredData.length;
+    badge.style.display = 'inline-block';
+    list.innerHTML = filteredData.map(u => `
+      <div class="unknown-row">
+        <div>
+          <div style="font-weight:700; color:var(--warning);">ID BARU: ${u.fp_id}</div>
+          <div style="font-size:12px; color:var(--text-muted);">Terdeteksi pada ${new Date(u.waktu).toLocaleTimeString()}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openModal(${u.fp_id})">Daftarkan Sekarang</button>
+      </div>
+    `).join('');
+  } else {
+    badge.style.display = 'none';
+    list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px;">Tidak ada sidik jari baru yang perlu didaftarkan.</p>';
+  }
+}
+
+function openDeleteModal() {
+  const id = prompt("Masukkan ID yang ingin dihapus dari sensor (1-127):");
+  if (id) {
+    deleteFromSensor(id);
+  }
+}
+
+async function deleteFromSensor(fp_id) {
+  if(!confirm(`PERINGATAN: Menghapus ID ${fp_id} dari sensor juga akan MENGHAPUS data siswa terkait di database. Lanjutkan?`)) return;
+  
+  try {
+    // 1. Hapus di Alat (ESP32)
+    const resESP = await fetch(`${ESP32_IP}/delete?id=${fp_id}`);
+    const dataESP = await resESP.json();
+    
+    if(dataESP.msg === 'ok') {
+      // 2. Hapus di Database berdasarkan FP_ID
+      await fetch(`api.php?action=delete_by_fpid&fp_id=${fp_id}`);
+      alert(`ID ${fp_id} berhasil dihapus dari sensor dan database!`);
+      loadSiswa();
+    } else {
+      alert("Gagal menghapus ID dari sensor.");
+    }
+  } catch(e) {
+    alert("Gagal menghubungi alat (ESP32).");
+  }
+}
+
+async function clearAllUnknown() {
+  if(!confirm('Hapus semua antrian sidik jari baru?')) return;
+  await fetch('api.php?action=clear_all_unknown');
+  loadUnknown();
+}
+
+async function submitReg() {
+  const nis = document.getElementById('reg-nis').value.trim();
+  const nama = document.getElementById('reg-nama').value.trim();
+  const kelas = document.getElementById('reg-kelas').value.trim();
+  const fp_id = document.getElementById('reg-fpid').value;
+  const ket = document.getElementById('reg-ket').value.trim();
+
+  if (!nis || !nama || !fp_id) {
+    alert("NIS, Nama, dan FP ID wajib diisi!");
+    return;
+  }
+
+  const payload = {
+    id: editingId,
+    nis: nis,
+    nama: nama,
+    kelas: kelas,
+    fp_id: parseInt(fp_id),
+    keterangan_masalah: ket
+  };
+  
+  const action = editingId ? 'update_siswa' : 'add_siswa';
+  
+  try {
+    const res = await fetch(`api.php?action=${action}`, { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload) 
+    });
+    
+    const result = await res.json();
+    if (result.error) {
+      alert("Error: " + result.error);
+    } else {
+      alert(editingId ? "Data berhasil diupdate!" : "Siswa berhasil didaftarkan!");
+      closeModal();
+      loadSiswa();
+      if(!editingId) {
+        loadUnknown();
+        showPage('siswa');
+      }
+    }
+  } catch (e) {
+    console.error("Gagal simpan:", e);
+    alert("Gagal menghubungi server!");
+  }
+}
+
+async function deleteSiswa(id, fp_id) {
+  if(!confirm(`Hapus data siswa ini? \n(ID Fingerprint ${fp_id} juga akan dihapus dari sensor)`)) return;
+  
+  try {
+    // 1. Hapus di Database
+    await fetch(`api.php?action=delete_siswa&id=${id}`);
+    
+    // 2. Hapus di Alat (ESP32)
+    await fetch(`${ESP32_IP}/delete?id=${fp_id}`);
+    
+    alert("Data siswa dan sidik jari berhasil dihapus!");
+    loadSiswa();
+  } catch (e) {
+    console.error("Gagal menghapus:", e);
+    alert("Berhasil hapus di database, tapi gagal terhubung ke ESP32.");
+    loadSiswa();
+  }
+}
+
+async function loadLogs() {
+  const search = document.getElementById('filter-search').value.trim();
+  const start = document.getElementById('filter-start').value;
+  const end = document.getElementById('filter-end').value;
+  const hideDup = document.getElementById('filter-hide-dup').checked;
+
+  let url = `${SERVER_URL}/api.php?action=get_logs&hide_duplicates=${hideDup}`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  if (start) url += `&start=${start.replace('T', ' ')}`;
+  if (end) url += `&end=${end.replace('T', ' ')}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  document.getElementById('table-log').innerHTML = data.map(l => `
+    <tr>
+      <td style="font-family:var(--mono); font-size:12px;">${l.waktu}</td>
+      <td><b>${l.nama}</b></td>
+      <td>${l.nis}</td>
+      <td><span class="badge badge-success">Masuk</span> ${hideDup ? '<small style="color:var(--text-muted); font-size:9px;">(Grouped)</small>' : ''}</td>
+    </tr>
+  `).join('');
+  
+  if (!start && !end && !search) {
+    const today = new Date().toISOString().split('T')[0];
+    const hadir = new Set(data.filter(l => l.waktu.includes(today)).map(l => l.nis)).size;
+    document.getElementById('stat-hadir').innerText = hadir;
+  }
+}
+
+function resetLogFilter() {
+  document.getElementById('filter-search').value = "";
+  document.getElementById('filter-start').value = "";
+  document.getElementById('filter-end').value = "";
+  document.getElementById('filter-hide-dup').checked = false;
+  loadLogs();
+}
+
+function exportLogs() {
+  const search = document.getElementById('filter-search').value.trim();
+  const start = document.getElementById('filter-start').value;
+  const end = document.getElementById('filter-end').value;
+  const hideDup = document.getElementById('filter-hide-dup').checked;
+
+  let url = `${SERVER_URL}/api.php?action=export_logs&hide_duplicates=${hideDup}`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  if (start) url += `&start=${start.replace('T', ' ')}`;
+  if (end) url += `&end=${end.replace('T', ' ')}`;
+
+  window.location.href = url;
+}
+
+// ─── POLLING ───
+async function checkApiConn() {
+  try {
+    const res = await fetch(`${SERVER_URL}/api.php?action=get_siswa`);
+    if(res.ok) {
+      document.getElementById('conn-api').innerText = "● API: Connected";
+      document.getElementById('conn-api').style.color = "var(--success)";
+    }
+  } catch(e) {
+    document.getElementById('conn-api').innerText = "● API: Error (Use Localhost!)";
+    document.getElementById('conn-api').style.color = "var(--danger)";
+  }
+}
+
+let lastAbsenId = 0;
+let lastUnknownId = 0;
+let isInitialLoad = true;
+
+async function poll() {
+  try {
+    const res = await fetch(`${SERVER_URL}/api.php?action=get_latest_event&last_absen_id=${lastAbsenId}&last_unknown_id=${lastUnknownId}`);
+    const result = await res.json();
+    
+    // Status koneksi ESP tetap dicek sesekali tapi tidak untuk data scan
+    checkEspConn();
+
+    if (result.type !== 'none') {
+      console.log("Event baru terdeteksi:", result);
+      
+      // Jika ini load pertama kali, jangan tampilkan notifikasi pop-up
+      if (isInitialLoad) {
+        if (result.type === 'terdaftar') lastAbsenId = result.data.id;
+        if (result.type === 'tidak_dikenal') lastUnknownId = result.data.id;
+        isInitialLoad = false;
+        return;
+      }
+
+      const icon = document.getElementById('status-icon');
+      const text = document.getElementById('status-text');
+      const sub  = document.getElementById('status-subtext');
+
+      if (result.type === 'terdaftar') {
+        lastAbsenId = result.data.id;
+        icon.innerText = "✅";
+        text.innerText = "ABSEN BERHASIL";
+        sub.innerText = result.data.nama + " (" + result.data.kelas + ")";
+        loadLogs();
+      } else if (result.type === 'tidak_dikenal') {
+        lastUnknownId = result.data.id;
+        icon.innerText = "⚠️";
+        text.innerText = "SIDIK JARI BARU!";
+        sub.innerText = "ID " + result.data.fp_id + " belum terdaftar. Cek menu Sidik Jari Baru.";
+        loadUnknown();
+      }
+
+      setTimeout(() => {
+        icon.innerText = "☝️";
+        text.innerText = "Menunggu Scan...";
+        sub.innerText = "";
+      }, 5000);
+    } else {
+      isInitialLoad = false;
+    }
+  } catch(e) {
+    console.error("Poll error:", e);
+  }
+}
+
+async function checkEspConn() {
+  try {
+    const res = await fetch(`${ESP32_IP}/status`, { signal: AbortSignal.timeout(3000) });
+    if(res.ok) {
+      document.getElementById('conn-esp').innerText = "● ESP32: Connected";
+      document.getElementById('conn-esp').style.color = "var(--success)";
+    }
+  } catch(e) {
+    document.getElementById('conn-esp').innerText = "● ESP32: Disconnected";
+    document.getElementById('conn-esp').style.color = "var(--danger)";
+  }
+}
+
+async function startEnroll() {
+  try {
+    // Ambil ID berikutnya secara otomatis dari API
+    const resAPI = await fetch(`${SERVER_URL}/api.php?action=get_next_fpid`);
+    const dataAPI = await resAPI.json();
+    const nextID = dataAPI.next_id;
+
+    if(confirm(`Alat akan merekam jari baru dengan ID: ${nextID}. Lanjutkan?`)) {
+      await fetch(`${ESP32_IP}/enroll?id=${nextID}`);
+      alert("Silakan tempel jari di sensor sesuai instruksi LCD Arduino (Tempel 2x)");
+    }
+  } catch(e) {
+    console.error("Gagal memulai enroll:", e);
+    alert("Gagal menghubungi server atau ESP32. Cek koneksi!");
+  }
+}
+
+setInterval(poll, 3000);
+setInterval(checkApiConn, 5000);
+setInterval(checkEspConn, 8000); // Cek alat setiap 8 detik agar tidak membebani
+setInterval(loadUnknown, 5000);
+checkApiConn();
+checkEspConn(); // Jalankan sekali saat startup
+loadSiswa();
+loadLogs();
+loadUnknown();
+</script>
+</body>
+</html>
