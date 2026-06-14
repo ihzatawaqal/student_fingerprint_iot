@@ -27,12 +27,55 @@ if ($conn->connect_error) {
     exit;
 }
 
+// Helper: Ambil konfigurasi jam yang berlaku
+function getConfig($conn, $tanggal = null) {
+    if (!$tanggal) $tanggal = date('Y-m-d');
+    
+    // Cek apakah ada config khusus tanggal ini
+    $res = $conn->query("SELECT * FROM konfigurasi_jam WHERE tanggal = '$tanggal'");
+    if ($res && $res->num_rows > 0) {
+        return $res->fetch_assoc();
+    }
+    
+    // Jika tidak ada, ambil yang terbaru sebelum tanggal ini atau default
+    $res = $conn->query("SELECT * FROM konfigurasi_jam ORDER BY tanggal DESC LIMIT 1");
+    if ($res && $res->num_rows > 0) {
+        return $res->fetch_assoc();
+    }
+    
+    // Default fallback jika tabel kosong
+    return ["jam_masuk" => "07:15:00", "jam_pulang" => "14:00:00"];
+}
+
 $action = $_GET['action'] ?? '';
 
 if ($action == 'get_siswa') {
     $result = $conn->query("SELECT * FROM siswa ORDER BY nama ASC");
     echo json_encode($result ? $result->fetch_all(MYSQLI_ASSOC) : []);
 } 
+
+elseif ($action == 'get_config') {
+    echo json_encode(getConfig($conn));
+}
+
+elseif ($action == 'save_config') {
+    $raw_data = file_get_contents('php://input');
+    $data = json_decode($raw_data, true);
+    
+    $tanggal = $data['tanggal'] ?? date('Y-m-d');
+    $jam_masuk = $data['jam_masuk'];
+    $jam_pulang = $data['jam_pulang'];
+    
+    $stmt = $conn->prepare("INSERT INTO konfigurasi_jam (tanggal, jam_masuk, jam_pulang) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE jam_masuk=?, jam_pulang=?");
+    $stmt->bind_param("sssss", $tanggal, $jam_masuk, $jam_pulang, $jam_masuk, $jam_pulang);
+    
+    if ($stmt->execute()) {
+        echo json_encode(["msg" => "ok"]);
+    } else {
+        echo json_encode(["error" => $conn->error]);
+    }
+    $stmt->close();
+}
 
 elseif ($action == 'get_next_fpid') {
     $result = $conn->query("SELECT MAX(fp_id) as max_id FROM siswa");
@@ -103,21 +146,45 @@ elseif ($action == 'add_absen') {
     }
     
     $fp_id = (int)$data['fp_id'];
-    $tipe = $data['tipe'] ?? 'Masuk';
+    $now = date('H:i:s');
+    $config = getConfig($conn);
+    
+    // Penentuan Tipe Otomatis:
+    // Jika scan dilakukan sebelum jam masuk + 4 jam, dianggap Masuk. 
+    // Selebihnya dianggap Keluar.
+    $limit_masuk = date('H:i:s', strtotime($config['jam_masuk'] . ' +4 hours'));
+    $tipe = ($now <= $limit_masuk) ? 'Masuk' : 'Keluar';
+    
+    // Penentuan Status Terlambat (hanya jika Masuk)
+    $status = 'Tepat Waktu';
+    if ($tipe == 'Masuk' && $now > $config['jam_masuk']) {
+        $status = 'Terlambat';
+    }
     
     // Cari data siswa berdasarkan FP_ID
     $res = $conn->query("SELECT id, nama, kelas FROM siswa WHERE fp_id = $fp_id");
     
     if ($res && $res->num_rows > 0) {
         $siswa = $res->fetch_assoc();
-        $stmt = $conn->prepare("INSERT INTO absensi (siswa_id, tipe) VALUES (?, ?)");
-        $stmt->bind_param("is", $siswa['id'], $tipe);
+        
+        // Cek duplikat di jam yang sama (anti-spam)
+        $today = date('Y-m-d');
+        $check = $conn->query("SELECT id FROM absensi WHERE siswa_id = {$siswa['id']} AND tipe = '$tipe' AND DATE(waktu) = '$today'");
+        if ($check && $check->num_rows > 0) {
+             echo json_encode(["msg" => "ok", "info" => "Sudah absen $tipe hari ini"]);
+             exit;
+        }
+
+        $stmt = $conn->prepare("INSERT INTO absensi (siswa_id, tipe, status) VALUES (?, ?, ?)");
+        $stmt->bind_param("iss", $siswa['id'], $tipe, $status);
         if ($stmt->execute()) {
             echo json_encode([
                 "msg" => "ok", 
                 "status" => "terdaftar", 
                 "nama" => $siswa['nama'], 
-                "kelas" => $siswa['kelas']
+                "kelas" => $siswa['kelas'],
+                "tipe" => $tipe,
+                "ket" => ($tipe == 'Masuk' ? $status : 'Selesai')
             ]);
         } else {
             echo json_encode(["error" => "Gagal catat absen: " . $conn->error]);
@@ -183,47 +250,64 @@ elseif ($action == 'clear_all_unknown') {
 }
 
 elseif ($action == 'get_logs' || $action == 'export_logs') {
-    $start = $_GET['start'] ?? '';
-    $end = $_GET['end'] ?? '';
+    $start = $_GET['start'] ?? date('Y-m-d');
+    $end = $_GET['end'] ?? date('Y-m-d');
     $search = $_GET['search'] ?? '';
-    $hide_dup = ($_GET['hide_duplicates'] ?? 'false') === 'true';
     
-    $where = [];
-    if ($start) $where[] = "a.waktu >= '" . $conn->real_escape_string($start) . "'";
-    if ($end) $where[] = "a.waktu <= '" . $conn->real_escape_string($end) . "'";
+    // Kita buat query yang lebih canggih untuk dashboard harian
+    // Mengelompokkan berdasarkan Siswa dan Tanggal
+    
+    $where_siswa = "";
     if ($search) {
         $s = $conn->real_escape_string($search);
-        $where[] = "(s.nama LIKE '%$s%' OR s.nis LIKE '%$s%')";
+        $where_siswa = "AND (s.nama LIKE '%$s%' OR s.nis LIKE '%$s%')";
     }
-    
-    $where_sql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
-    
-    if ($hide_dup) {
-        // Ambil ID pertama dari tiap siswa dalam kriteria yang dipilih
-        $sub_where = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
-        $sql = "SELECT a.id, a.waktu, a.tipe, s.nama, s.nis, s.kelas 
-                FROM absensi a 
-                JOIN siswa s ON a.siswa_id = s.id 
-                WHERE a.id IN (SELECT MIN(id) FROM absensi a $sub_where GROUP BY siswa_id)
-                ORDER BY a.waktu DESC LIMIT 1000";
-    } else {
-        $sql = "SELECT a.*, s.nama, s.nis, s.kelas 
-                FROM absensi a 
-                JOIN siswa s ON a.siswa_id = s.id 
-                $where_sql
-                ORDER BY a.waktu DESC LIMIT 1000";
+
+    $sql = "SELECT 
+                s.id as siswa_id, s.nama, s.nis, s.kelas,
+                DATE(a_masuk.waktu) as tanggal,
+                TIME(a_masuk.waktu) as jam_datang,
+                a_masuk.status as status_masuk,
+                TIME(a_keluar.waktu) as jam_pulang,
+                IF(a_masuk.id IS NOT NULL, 'Hadir', 'Tidak Hadir') as status_kehadiran,
+                c.jam_masuk as config_masuk,
+                c.jam_pulang as config_pulang
+            FROM siswa s
+            LEFT JOIN absensi a_masuk ON s.id = a_masuk.siswa_id AND a_masuk.tipe = 'Masuk' AND DATE(a_masuk.waktu) BETWEEN '$start' AND '$end'
+            LEFT JOIN absensi a_keluar ON s.id = a_keluar.siswa_id AND a_keluar.tipe = 'Keluar' AND DATE(a_keluar.waktu) = DATE(a_masuk.waktu)
+            LEFT JOIN konfigurasi_jam c ON (c.tanggal = DATE(a_masuk.waktu) OR c.tanggal = '2000-01-01')
+            WHERE 1=1 $where_siswa
+            GROUP BY s.id, DATE(a_masuk.waktu)
+            ORDER BY DATE(a_masuk.waktu) DESC, s.nama ASC";
+
+    // Jika filter tanggal sama, pastikan juga menampilkan yang TIDAK HADIR hari itu
+    if ($start == $end) {
+        $sql = "SELECT 
+                    s.id as siswa_id, s.nama, s.nis, s.kelas,
+                    '$start' as tanggal,
+                    TIME(a_masuk.waktu) as jam_datang,
+                    a_masuk.status as status_masuk,
+                    TIME(a_keluar.waktu) as jam_pulang,
+                    IF(a_masuk.id IS NOT NULL, 'Hadir', 'Tidak Hadir') as status_kehadiran,
+                    (SELECT jam_masuk FROM konfigurasi_jam WHERE tanggal = '$start' OR tanggal = '2000-01-01' ORDER BY tanggal DESC LIMIT 1) as config_masuk,
+                    (SELECT jam_pulang FROM konfigurasi_jam WHERE tanggal = '$start' OR tanggal = '2000-01-01' ORDER BY tanggal DESC LIMIT 1) as config_pulang
+                FROM siswa s
+                LEFT JOIN absensi a_masuk ON s.id = a_masuk.siswa_id AND a_masuk.tipe = 'Masuk' AND DATE(a_masuk.waktu) = '$start'
+                LEFT JOIN absensi a_keluar ON s.id = a_keluar.siswa_id AND a_keluar.tipe = 'Keluar' AND DATE(a_keluar.waktu) = '$start'
+                WHERE 1=1 $where_siswa
+                ORDER BY status_kehadiran DESC, s.nama ASC";
     }
-    
+
     $result = $conn->query($sql);
     $data = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
     if ($action == 'export_logs') {
         header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename=log_kehadiran_' . date('Ymd_His') . '.csv');
+        header('Content-Disposition: attachment; filename=rekap_kehadiran_' . date('Ymd_His') . '.csv');
         $output = fopen('php://output', 'w');
-        fputcsv($output, ['Waktu', 'Nama', 'NIS', 'Kelas', 'Tipe']);
+        fputcsv($output, ['Tanggal', 'Nama', 'NIS', 'Kelas', 'Jam Datang', 'Status Masuk', 'Jam Pulang', 'Kehadiran']);
         foreach ($data as $row) {
-            fputcsv($output, [$row['waktu'], $row['nama'], $row['nis'], $row['kelas'], $row['tipe']]);
+            fputcsv($output, [$row['tanggal'], $row['nama'], $row['nis'], $row['kelas'], $row['jam_datang'], $row['status_masuk'], $row['jam_pulang'], $row['status_kehadiran']]);
         }
         fclose($output);
         exit;
