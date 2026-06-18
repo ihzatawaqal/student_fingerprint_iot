@@ -5,15 +5,21 @@
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h> 
+#include <LittleFS.h>
+#include <WiFiManager.h> // Library: WiFiManager by tzapu
 
-// ================= CONFIG JARINGAN =================
-const char* ssid          = "NAMA_WIFI_ANDA";      
-const char* password      = "PASSWORD_WIFI_ANDA";   
-const char* serverIP      = "192.168.1.10"; // Ganti dengan IP Laptop/Server Anda
-// ===================================================
+// ================= CONFIG JARINGAN (DINAMIS) =================
+char server_ip[40] = "192.168.1.10"; // Default, akan dioverwrite dari LittleFS
+bool shouldSaveConfig = false;
+
+// Callback untuk memberitahu bahwa konfigurasi perlu disimpan
+void saveConfigCallback() {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
 
 String getApiUrl() {
-  return "http://" + String(serverIP) + "/fp/api.php?action=add_absen";
+  return "http://" + String(server_ip) + "/fp/api.php?action=add_absen";
 }
 
 WebServer server(80);
@@ -72,7 +78,7 @@ void debug(String msg) {
 // ================= PUSH DATA TO SERVER =================
 void pushData(int fpID) {
   if (WiFi.status() == WL_CONNECTED) {
-    debug("Pushing ID " + String(fpID) + " to server...");
+    debug("Pushing ID " + String(fpID) + " to server: " + getApiUrl());
     
     HTTPClient http;
     http.begin(getApiUrl());
@@ -181,26 +187,64 @@ void setup() {
   Wire.begin(21, 22);
   lcd.init();
   lcd.backlight();
-  tampil("Mencari WiFi...");
+  tampil("Memulai Sistem...");
 
-  debug("Menghubungkan ke: " + String(ssid));
-  WiFi.begin(ssid, password);
-  int retry = 0;
-  while (WiFi.status() != WL_CONNECTED && retry < 20) {
-    delay(500);
-    Serial.print(".");
-    retry++;
-  }
-
-  if(WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[WiFi] Terhubung!");
-    Serial.print("[WiFi] IP Address: ");
-    Serial.println(WiFi.localIP());
-    tampil("WiFi OK", WiFi.localIP().toString());
+  // --- LittleFS Setup (Simpan Config) ---
+  if (LittleFS.begin(true)) {
+    Serial.println("[FS] LittleFS Mounted");
+    if (LittleFS.exists("/config.json")) {
+      File configFile = LittleFS.open("/config.json", "r");
+      if (configFile) {
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, configFile);
+        if (!error) {
+          strcpy(server_ip, doc["server_ip"]);
+          Serial.print("[FS] Server IP Loaded: "); Serial.println(server_ip);
+        }
+        configFile.close();
+      }
+    }
   } else {
-    Serial.println("\n[WiFi] GAGAL TERHUBUNG!");
-    tampil("WiFi Error", "Cek SSID/Pass");
+    Serial.println("[FS] LittleFS Mount Failed");
   }
+
+  // --- WiFiManager Setup ---
+  WiFiManager wm;
+  wm.setSaveConfigCallback(saveConfigCallback);
+  
+  // Tambahkan parameter custom untuk Server IP
+  WiFiManagerParameter custom_server_ip("server", "IP Laptop/Server", server_ip, 40);
+  wm.addParameter(&custom_server_ip);
+
+  tampil("Mode Config:", "Cek HP: WatchSMP");
+  
+  // Jika gagal connect atau reset, buka AP "WatchSMP-Config"
+  if (!wm.autoConnect("WatchSMP-Config")) {
+    Serial.println("[WM] Gagal terhubung dan timeout");
+    tampil("WiFi Error", "Reset Alat!");
+    delay(3000);
+    ESP.restart();
+  }
+
+  // Baca parameter baru
+  strcpy(server_ip, custom_server_ip.getValue());
+
+  // Simpan ke LittleFS jika ada perubahan
+  if (shouldSaveConfig) {
+    StaticJsonDocument<256> doc;
+    doc["server_ip"] = server_ip;
+    File configFile = LittleFS.open("/config.json", "w");
+    if (configFile) {
+      serializeJson(doc, configFile);
+      configFile.close();
+      Serial.println("[FS] Config Saved");
+    }
+  }
+
+  Serial.println("\n[WiFi] Terhubung!");
+  Serial.print("[WiFi] IP Address: ");
+  Serial.println(WiFi.localIP());
+  tampil("WiFi OK", WiFi.localIP().toString());
   delay(2000);
 
   // Routes
@@ -267,8 +311,8 @@ void loop() {
         webStatus = "Tidak dikenal";
         tampil("Tidak Dikenal", "ID: Baru");
         
-        // PUSH DATA UNKNOWN KE SERVER (Biasanya dikirim ID 0 atau ID yang discan)
-        pushData(finger.fingerID == 0 ? 0 : finger.fingerID);
+        // PUSH DATA UNKNOWN KE SERVER
+        pushData(0);
       } else {
         Serial.print("[MATCH] Error search: "); Serial.println(p);
       }

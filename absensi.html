@@ -264,10 +264,10 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     </div>
   </section>
 
-  <!-- LOG KEHADIRAN -->
   <section id="page-log" class="page">
     <div class="header">
       <h1>Log Kehadiran</h1>
+      <button class="btn btn-sm" style="background:var(--danger); color:white;" onclick="clearTodayLogs()">🗑️ Hapus Log Hari Ini (Test)</button>
     </div>
     
     <div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
@@ -365,7 +365,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 <script>
 // ================= CONFIG JARINGAN =================
-const ESP32_IP  = "http://192.168.6.8";    // IP Alat (Cek di Serial Monitor)
+const ESP32_IP  = "http://192.168.100.12";    // IP Alat (Cek di Serial Monitor)
 const SERVER_URL = "http://localhost/fp";   // URL API (Tanpa tanda miring di akhir)
 // ===================================================
 
@@ -490,6 +490,21 @@ async function deleteFromSensor(fp_id) {
   }
 }
 
+async function clearTodayLogs() {
+  if (!confirm("Hapus semua log absen HARI INI untuk keperluan testing?")) return;
+  try {
+    const res = await fetch(`${SERVER_URL}/api.php?action=clear_today_logs`);
+    const result = await res.json();
+    if (result.msg === 'ok') {
+      alert("Log hari ini berhasil dibersihkan!");
+      loadLogs();
+    }
+  } catch (e) {
+    console.error("Gagal hapus log:", e);
+    alert("Gagal menghubungi server!");
+  }
+}
+
 async function clearAllUnknown() {
   if(!confirm('Hapus semua antrian sidik jari baru?')) return;
   await fetch('api.php?action=clear_all_unknown');
@@ -590,8 +605,11 @@ async function loadLogs() {
       </td>
       <td style="font-weight:600;">${l.jam_pulang ? '✅ ' + l.jam_pulang : '❌ -'}</td>
       <td>
-        ${l.status_kehadiran === 'Hadir' ? '<span class="badge badge-success">Hadir</span>' : '<span class="badge badge-warning">Tidak Hadir</span>'}
+        ${l.status_kehadiran === 'Hadir' ? '<span class="badge badge-success">Hadir</span>' : 
+          l.status_kehadiran === 'Tidak Lengkap' ? '<span class="badge badge-warning">Tidak Lengkap</span>' : 
+          '<span class="badge badge-danger" style="background:rgba(244,63,94,0.1); color:var(--danger);">Tidak Hadir</span>'}
       </td>
+
     </tr>
   `).join('');
   

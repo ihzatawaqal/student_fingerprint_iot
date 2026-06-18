@@ -13,6 +13,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Set timezone agar sinkron dengan alat dan waktu lokal
+date_default_timezone_set('Asia/Jakarta');
+
 $host = "127.0.0.1"; // Gunakan 127.0.0.1 jika localhost tidak bisa
 $user = "root";
 $pass = "";
@@ -26,6 +29,9 @@ if ($conn->connect_error) {
     echo json_encode(["error" => "Koneksi database gagal: " . $conn->connect_error]);
     exit;
 }
+
+// Set timezone di level MySQL agar fungsi DATE() dan NOW() sinkron
+$conn->query("SET time_zone = '+07:00'");
 
 // Helper: Ambil konfigurasi jam yang berlaku
 function getConfig($conn, $tanggal = null) {
@@ -146,19 +152,20 @@ elseif ($action == 'add_absen') {
     }
     
     $fp_id = (int)$data['fp_id'];
-    $now = date('H:i:s');
-    $config = getConfig($conn);
+    $now_time = date('H:i:s');
+    $today = date('Y-m-d');
+    $config = getConfig($conn, $today);
     
-    // Penentuan Tipe Otomatis:
-    // Jika scan dilakukan sebelum jam masuk + 4 jam, dianggap Masuk. 
-    // Selebihnya dianggap Keluar.
-    $limit_masuk = date('H:i:s', strtotime($config['jam_masuk'] . ' +4 hours'));
-    $tipe = ($now <= $limit_masuk) ? 'Masuk' : 'Keluar';
+    // Tentukan Tipe dan Status Berdasarkan Aturan Baru:
+    // 1. Sebelum Jam Pulang -> Selalu Masuk (bisa Tepat Waktu atau Terlambat)
+    // 2. Sesudah Jam Pulang -> Selalu Keluar
     
-    // Penentuan Status Terlambat (hanya jika Masuk)
-    $status = 'Tepat Waktu';
-    if ($tipe == 'Masuk' && $now > $config['jam_masuk']) {
-        $status = 'Terlambat';
+    if ($now_time < $config['jam_pulang']) {
+        $tipe = 'Masuk';
+        $status = ($now_time <= $config['jam_masuk']) ? 'Tepat Waktu' : 'Terlambat';
+    } else {
+        $tipe = 'Keluar';
+        $status = 'Selesai';
     }
     
     // Cari data siswa berdasarkan FP_ID
@@ -167,11 +174,17 @@ elseif ($action == 'add_absen') {
     if ($res && $res->num_rows > 0) {
         $siswa = $res->fetch_assoc();
         
-        // Cek duplikat di jam yang sama (anti-spam)
-        $today = date('Y-m-d');
+        // Cek apakah sudah ada absen dengan tipe yang sama hari ini (Anti-spam)
         $check = $conn->query("SELECT id FROM absensi WHERE siswa_id = {$siswa['id']} AND tipe = '$tipe' AND DATE(waktu) = '$today'");
         if ($check && $check->num_rows > 0) {
-             echo json_encode(["msg" => "ok", "info" => "Sudah absen $tipe hari ini"]);
+             echo json_encode([
+                 "msg" => "ok", 
+                 "status" => "terdaftar", 
+                 "info" => "Sudah absen $tipe hari ini",
+                 "nama" => $siswa['nama'],
+                 "kelas" => $siswa['kelas'],
+                 "tipe" => $tipe
+             ]);
              exit;
         }
 
@@ -249,6 +262,15 @@ elseif ($action == 'clear_all_unknown') {
     echo json_encode(["msg" => "ok"]);
 }
 
+elseif ($action == 'clear_today_logs') {
+    $today = date('Y-m-d');
+    if ($conn->query("DELETE FROM absensi WHERE DATE(waktu) = '$today'")) {
+        echo json_encode(["msg" => "ok"]);
+    } else {
+        echo json_encode(["error" => $conn->error]);
+    }
+}
+
 elseif ($action == 'get_logs' || $action == 'export_logs') {
     $start = $_GET['start'] ?? date('Y-m-d');
     $end = $_GET['end'] ?? date('Y-m-d');
@@ -269,7 +291,11 @@ elseif ($action == 'get_logs' || $action == 'export_logs') {
                 TIME(a_masuk.waktu) as jam_datang,
                 a_masuk.status as status_masuk,
                 TIME(a_keluar.waktu) as jam_pulang,
-                IF(a_masuk.id IS NOT NULL, 'Hadir', 'Tidak Hadir') as status_kehadiran,
+                CASE 
+                    WHEN a_masuk.id IS NOT NULL AND a_keluar.id IS NOT NULL THEN 'Hadir'
+                    WHEN a_masuk.id IS NOT NULL OR a_keluar.id IS NOT NULL THEN 'Tidak Lengkap'
+                    ELSE 'Tidak Hadir'
+                END as status_kehadiran,
                 c.jam_masuk as config_masuk,
                 c.jam_pulang as config_pulang
             FROM siswa s
@@ -285,15 +311,19 @@ elseif ($action == 'get_logs' || $action == 'export_logs') {
         $sql = "SELECT 
                     s.id as siswa_id, s.nama, s.nis, s.kelas,
                     '$start' as tanggal,
-                    TIME(a_masuk.waktu) as jam_datang,
-                    a_masuk.status as status_masuk,
-                    TIME(a_keluar.waktu) as jam_pulang,
-                    IF(a_masuk.id IS NOT NULL, 'Hadir', 'Tidak Hadir') as status_kehadiran,
+                    (SELECT TIME(waktu) FROM absensi WHERE siswa_id = s.id AND tipe = 'Masuk' AND DATE(waktu) = '$start' LIMIT 1) as jam_datang,
+                    (SELECT status FROM absensi WHERE siswa_id = s.id AND tipe = 'Masuk' AND DATE(waktu) = '$start' LIMIT 1) as status_masuk,
+                    (SELECT TIME(waktu) FROM absensi WHERE siswa_id = s.id AND tipe = 'Keluar' AND DATE(waktu) = '$start' LIMIT 1) as jam_pulang,
+                    (SELECT COUNT(*) FROM absensi WHERE siswa_id = s.id AND DATE(waktu) = '$start') as total_scan,
+                    CASE 
+                        WHEN (SELECT COUNT(*) FROM absensi WHERE siswa_id = s.id AND DATE(waktu) = '$start' AND tipe = 'Masuk') > 0 
+                             AND (SELECT COUNT(*) FROM absensi WHERE siswa_id = s.id AND DATE(waktu) = '$start' AND tipe = 'Keluar') > 0 THEN 'Hadir'
+                        WHEN (SELECT COUNT(*) FROM absensi WHERE siswa_id = s.id AND DATE(waktu) = '$start') > 0 THEN 'Tidak Lengkap'
+                        ELSE 'Tidak Hadir'
+                    END as status_kehadiran,
                     (SELECT jam_masuk FROM konfigurasi_jam WHERE tanggal = '$start' OR tanggal = '2000-01-01' ORDER BY tanggal DESC LIMIT 1) as config_masuk,
                     (SELECT jam_pulang FROM konfigurasi_jam WHERE tanggal = '$start' OR tanggal = '2000-01-01' ORDER BY tanggal DESC LIMIT 1) as config_pulang
                 FROM siswa s
-                LEFT JOIN absensi a_masuk ON s.id = a_masuk.siswa_id AND a_masuk.tipe = 'Masuk' AND DATE(a_masuk.waktu) = '$start'
-                LEFT JOIN absensi a_keluar ON s.id = a_keluar.siswa_id AND a_keluar.tipe = 'Keluar' AND DATE(a_keluar.waktu) = '$start'
                 WHERE 1=1 $where_siswa
                 ORDER BY status_kehadiran DESC, s.nama ASC";
     }

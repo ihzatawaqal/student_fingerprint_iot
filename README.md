@@ -7,12 +7,14 @@ Sistem monitoring kehadiran siswa berbasis IoT menggunakan ESP32, sensor sidik j
 ## 🚀 Fitur Utama
 
 1.  **Push-to-Server Architecture**: ESP32 mengirim data langsung ke database. Data aman meskipun alat restart.
-2.  **Discovery-Based Registration**: Daftar sidik jari baru langsung dari dashboard. Tidak perlu input ID manual di kode.
-3.  **Real-time Monitoring**: Dashboard otomatis mendeteksi kehadiran dalam < 3 detik menggunakan polling API.
-4.  **Remote Command**: Masuk ke mode "Enroll" (rekam jari) atau "Delete" sensor langsung dari web.
-5.  **LCD Interaktif**: Menampilkan nama dan kelas siswa dengan efek teks berjalan (*scrolling*).
-6.  **Log & Export**: Rekap kehadiran lengkap dengan filter tanggal, pencarian, dan fitur ekspor ke Excel/CSV.
-7.  **Integrated Emulator**: Bisa diuji coba tanpa alat fisik menggunakan file `emulator.php`.
+2.  **WiFi Manager & Persistent Config**: ESP32 masuk ke mode Access Point jika WiFi tidak ditemukan. Konfigurasi WiFi dan IP Server disimpan di memori internal (LittleFS).
+3.  **Smart Attendance Logic**: Otomatis menentukan status "Masuk" atau "Keluar" berdasarkan jam operasional yang bisa dikonfigurasi.
+4.  **Discovery-Based Registration**: Daftar sidik jari baru langsung dari dashboard tanpa input ID manual di kode.
+5.  **Real-time Monitoring**: Dashboard otomatis mendeteksi kehadiran secara instan.
+6.  **Remote Command**: Masuk ke mode "Enroll" atau "Delete" sensor langsung dari web.
+7.  **LCD Interaktif**: Menampilkan nama dan kelas siswa dengan efek teks berjalan (*scrolling*).
+8.  **Status Kehadiran Cerdas**: Mendeteksi status "Hadir", "Tidak Lengkap" (hanya satu kali scan), dan "Tidak Hadir".
+9.  **Log & Export**: Rekap kehadiran lengkap dengan filter dan fitur ekspor ke Excel/CSV.
 
 ---
 
@@ -41,43 +43,42 @@ Sistem monitoring kehadiran siswa berbasis IoT menggunakan ESP32, sensor sidik j
 ## 💻 Persiapan Software & Server
 
 ### 1. Setup Database (Laragon/XAMPP)
-1.  Buka terminal database Anda (HeidiSQL/phpMyAdmin).
-2.  Buat database baru bernama: `db_fingerprint_smp`.
-3.  Import file `database.sql` yang ada di folder root project ini.
+1.  Buat database baru bernama: `db_fingerprint_smp`.
+2.  Import file `database.sql` ke database tersebut.
 
 ### 2. Konfigurasi Backend (`api.php`)
-1.  Pastikan project berada di folder server web (misal: `C:\laragon\www\fp\`).
-2.  Buka `api.php`, sesuaikan konfigurasi database jika Anda menggunakan password:
-    ```php
-    $host = "127.0.0.1";
-    $user = "root";
-    $pass = ""; // Isi jika ada
-    $db   = "db_fingerprint_smp";
-    ```
+Pastikan project berada di folder server web (misal: `C:\laragon\www\fp\`).
+Sesuaikan konfigurasi database jika Anda menggunakan password:
+```php
+$host = "127.0.0.1";
+$user = "root";
+$pass = ""; 
+$db   = "db_fingerprint_smp";
+```
 
 ### 3. Konfigurasi Frontend (`absensi.html`)
-Buka `absensi.html`, cari bagian `// CONFIG JARINGAN`:
+Buka `absensi.html`, sesuaikan `SERVER_URL` dengan alamat server Anda:
 ```javascript
-const ESP32_IP  = "http://192.168.x.x"; // Isi IP ESP32 (lihat di Serial Monitor)
-const SERVER_URL = "http://localhost/fp"; // URL folder project Anda
+const SERVER_URL = "http://localhost/fp"; 
 ```
 
 ---
 
-## 📡 Flash ESP32 (Arduino IDE)
+## 📡 Flash ESP32 & Setup WiFi
 
 1.  Buka file `absensi/absensi.ino` di Arduino IDE.
 2.  Install Library:
     *   `Adafruit Fingerprint Sensor Library`
     *   `LiquidCrystal I2C`
     *   `ArduinoJson`
-3.  Konfigurasi WiFi di dalam kode:
-    ```cpp
-    const char* ssid     = "NAMA_WIFI";
-    const char* password = "PASS_WIFI";
-    const char* serverIP = "192.168.x.x"; // IP Laptop Anda (Cek via ipconfig)
-    ```
-4.  Upload ke ESP32 dan buka **Serial Monitor** (Baudrate 115200) untuk melihat IP Address alat.
+    *   `WiFiManager` (oleh tzapu)
+3.  Upload ke ESP32.
+4.  **Konfigurasi WiFi & IP Server:**
+    *   Saat pertama kali nyala, ESP32 akan membuat hotspot bernama **"WatchSMP-Config"**.
+    *   Hubungkan HP Anda ke WiFi tersebut.
+    *   Akan muncul popup otomatis (Captive Portal). Jika tidak, buka `192.168.4.1` di browser.
+    *   Pilih WiFi tujuan, masukkan password, dan isi **IP Server/Laptop** Anda.
+    *   Klik **Save**. ESP32 akan restart dan terhubung otomatis.
 
 ---
 
@@ -88,28 +89,18 @@ const SERVER_URL = "http://localhost/fp"; // URL folder project Anda
     *   Ikuti instruksi di LCD alat (Tempel jari 2x).
 2.  **Identifikasi Awal**:
     *   Tempelkan jari yang baru direkam (mode scan normal).
-    *   Dashboard akan mendeteksi **"SIDIK JARI BARU"**.
+    *   Dashboard akan mendeteksi **"SIDIK JARI BARU"** di menu Discovery.
 3.  **Input Data Siswa**:
     *   Buka menu **"Sidik Jari Baru"** di sidebar web.
     *   Klik **"Daftarkan Sekarang"**, isi Nama, NIS, dan Kelas.
-4.  **Selesai**: Setiap kali siswa tersebut absen, namanya akan muncul di Dashboard dan tersimpan di Log.
+4.  **Selesai**: Setiap kali siswa absen, namanya akan muncul di Dashboard dan tersimpan di Log dengan status yang sesuai.
 
 ---
 
-## 🧪 Testing Tanpa Alat (Emulator)
+## 🧪 Testing & Maintenance
 
-Jika Anda tidak memiliki hardware, Anda bisa menggunakan emulator:
-1.  Di `absensi.html`, ganti `ESP32_IP` menjadi: `http://localhost/fp/emulator.php`.
-2.  Buka `emulator.php?send_id=99` di browser untuk mensimulasikan scan jari ID 99.
-3.  Dashboard akan merespon seolah-olah ada hardware yang mengirim data.
-
----
-
-## ⚠️ Troubleshooting
-
-*   **Status Disconnected**: Cek apakah Laptop dan ESP32 berada di WiFi yang sama. Matikan Firewall Windows jika perlu.
-*   **Sensor Error**: Pastikan kabel TX dan RX sensor fingerprint tidak tertukar.
-*   **Database Gagal**: Pastikan nama database sama persis dengan yang ada di `api.php`.
+*   **Clear Logs**: Gunakan tombol "Hapus Log Hari Ini" di menu Log Kehadiran untuk mereset data absen harian saat testing.
+*   **Troubleshooting**: Jika status "Disconnected", pastikan IP Server yang diinput saat konfigurasi WiFi sudah benar dan laptop tidak memblokir koneksi (Firewall).
 
 ---
 *Dikembangkan untuk Monitoring Siswa Khusus - WatchSMP System.*
