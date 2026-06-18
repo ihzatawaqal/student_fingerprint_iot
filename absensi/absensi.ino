@@ -37,6 +37,10 @@ String  webStatus   = "Sistem siap";
 bool    isEnrolling = false;
 uint8_t targetID    = 0;
 
+#define RESET_PIN 0 // Menggunakan tombol BOOT di ESP32
+unsigned long buttonPressStartTime = 0;
+bool isResetting = false;
+
 // ================= LCD + SERIAL DEBUG =================
 void tampil(String baris1, String baris2 = "") {
   lcd.clear();
@@ -179,6 +183,7 @@ void handleOptions() {
 // ================= SETUP =================
 void setup() {
   Serial.begin(115200);
+  pinMode(RESET_PIN, INPUT_PULLUP);
   delay(1000);
   Serial.println("\n\n==============================");
   Serial.println("   WATCH SMP SYSTEM STARTING  ");
@@ -276,6 +281,31 @@ void setup() {
 // ================= LOOP =================
 void loop() {
   server.handleClient();
+
+  // --- CEK RESET WIFI (TOMBOL BOOT DITAHAN 3 DETIK) ---
+  if (digitalRead(RESET_PIN) == LOW) {
+    if (buttonPressStartTime == 0) {
+      buttonPressStartTime = millis();
+    }
+    
+    unsigned long holdTime = millis() - buttonPressStartTime;
+    if (holdTime > 3000 && !isResetting) {
+      isResetting = true;
+      tampil("Resetting WiFi...", "Mohon Tunggu...");
+      Serial.println("[WM] Reset Settings and Restarting...");
+      delay(1000);
+      
+      WiFiManager wm;
+      wm.resetSettings(); // Hapus kredensial WiFi
+      LittleFS.remove("/config.json"); // Hapus config IP Server juga agar bersih
+      
+      tampil("Reset Berhasil", "Rebooting...");
+      delay(2000);
+      ESP.restart();
+    }
+  } else {
+    buttonPressStartTime = 0;
+  }
 
   // Mode enroll
   if (isEnrolling) {
